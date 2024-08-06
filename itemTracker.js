@@ -12,10 +12,8 @@ async function fetchNextData(options) {
         depString = options.dep.map(dep => `d_${dep}`).join(",");
     }
 
-    // Construire l'URL de base
     let fetchUrl = `https://www.leboncoin.fr/recherche?category=2`;
 
-    // Ajouter les paramètres optionnels
     if (depString) {
         fetchUrl += `&locations=${depString}`;
     }
@@ -28,11 +26,11 @@ async function fetchNextData(options) {
     if (options.sort) {
         fetchUrl += `&sort=time`;
     }
-    if(options.price) {
-        fetchUrl += `&price=${options.price}`
+    if (options.price) {
+        fetchUrl += `&price=${options.price}`;
     }
-    if(options.mileage) {
-        fetchUrl += `&mileage=${options.mileage}`
+    if (options.mileage) {
+        fetchUrl += `&mileage=${options.mileage}`;
     }
 
     try {
@@ -43,13 +41,11 @@ async function fetchNextData(options) {
             auth: { username: '2838b6dcab314bc99c35650f8d146e56' }
         });
 
-        const httpResponseBody = Buffer.from(response.data.httpResponseBody, "base64").toString();
-
         if (response.status !== 200) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        console.log(fetchUrl)
 
+        const httpResponseBody = Buffer.from(response.data.httpResponseBody, "base64").toString();
         const $ = cheerio.load(httpResponseBody);
         const scriptContent = $('#__NEXT_DATA__').html();
 
@@ -57,26 +53,30 @@ async function fetchNextData(options) {
             throw new Error("La balise <script id='__NEXT_DATA__'> n'a pas été trouvée.");
         }
 
-        // Convertir le contenu en JSON
         const jsonData = JSON.parse(scriptContent);
         return jsonData;
     } catch (error) {
         console.error('Erreur lors de la récupération des données :', error.message);
+        return null;
     }
 }
 
-
 async function checkDistance(origin, destination) {
-    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?units=metric&origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&key=AIzaSyDVpX2-v2O1VhGO1TJSHx8K8f2p1iuGd8A`;
+    try {
+        const url = `https://maps.googleapis.com/maps/api/distancematrix/json?units=metric&origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&key=AIzaSyDVpX2-v2O1VhGO1TJSHx8K8f2p1iuGd8A`;
 
-    const response = await axios.get(url);
-    const data = response.data;
+        const response = await axios.get(url);
+        const data = response.data;
 
-    const distanceValue = {
-        distance: data.rows[0].elements[0].distance.text,
-        time: data.rows[0].elements[0].duration.text
-    };
-    return distanceValue;
+        const distanceValue = {
+            distance: data.rows[0].elements[0].distance.text,
+            time: data.rows[0].elements[0].duration.text
+        };
+        return distanceValue;
+    } catch (error) {
+        console.error('Erreur lors de la vérification de la distance :', error.message);
+        return { distance: 'N/A', time: 'N/A' };
+    }
 }
 
 async function sendToDiscord(channel, options, activeSearches) {
@@ -90,7 +90,7 @@ async function sendToDiscord(channel, options, activeSearches) {
         if (!brutData) return;
         const adsData = brutData.props.pageProps.searchData.ads;
 
-        if (adsData == null) return;
+        if (!adsData) return;
 
         const latestAd = adsData[0];
 
@@ -99,7 +99,7 @@ async function sendToDiscord(channel, options, activeSearches) {
             return;
         }
 
-        latestData.set(channel.id,latestAd.list_id)
+        latestData.set(channel.id, latestAd.list_id);
 
         const {
             subject,
@@ -125,7 +125,7 @@ async function sendToDiscord(channel, options, activeSearches) {
         const addFavoriteButton = new ButtonBuilder()
             .setCustomId(`favorite_${list_id}`)
             .setLabel("⭐ Ajouter favoris")
-            .setStyle(ButtonStyle.Primary)
+            .setStyle(ButtonStyle.Primary);
 
         const getAttributeValue = (key) => {
             const attribute = attributes.find(attr => attr.key === key);
@@ -136,7 +136,6 @@ async function sendToDiscord(channel, options, activeSearches) {
             .setComponents(sendMessageButton, annonceButton, addFavoriteButton);
         const embeds = [];
         const distanceValue = await checkDistance("Sevran", location.city);
-
 
         for (let i = 0; i < images.urls.length; i++) {
             if (i === 5) break;
@@ -181,22 +180,41 @@ async function sendToDiscord(channel, options, activeSearches) {
 }
 
 function formatPrice(price) {
-    return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    try {
+        return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    } catch (error) {
+        console.error('Erreur lors du formatage du prix :', error.message);
+        return price;
+    }
 }
 
 async function reload(channel, options, activeSearches) {
-    await delay(17000);
-    await sendToDiscord(channel, options, activeSearches);
+    try {
+        await delay(17000);
+        await sendToDiscord(channel, options, activeSearches);
+    } catch (error) {
+        console.error('Erreur lors du rechargement :', error.message);
+    }
 }
 
 function toUnix(dateString) {
-    const date = new Date(dateString);
-    const unixTimeSeconds = Math.floor(date.getTime() / 1000);
-    return unixTimeSeconds;
+    try {
+        const date = new Date(dateString);
+        const unixTimeSeconds = Math.floor(date.getTime() / 1000);
+        return unixTimeSeconds;
+    } catch (error) {
+        console.error('Erreur lors de la conversion de la date en timestamp Unix :', error.message);
+        return 0;
+    }
 }
 
 function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    try {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    } catch (error) {
+        console.error('Erreur lors du délai :', error.message);
+        return Promise.resolve();
+    }
 }
 
 module.exports = { sendToDiscord };
