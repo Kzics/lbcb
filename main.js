@@ -85,7 +85,9 @@ const rest = new REST({ version: '10' }).setToken('MTE2Nzk0ODg2ODEzNTE3MDIwOA.Gq
     }
 })();
 
-client.login('MTE2Nzk0ODg2ODEzNTE3MDIwOA.Gqv4wE.bG9gNXtZY1QbW8UM0PpvPME6-awDYZ7LqxitnU');
+require('dotenv').config();
+const token = process.env.DISCORD_TOKEN;
+client.login(token);
 console.log("LOGGED");
 
 function saveTrackedChannels() {
