@@ -1,6 +1,8 @@
 const { Client, GatewayIntentBits, Collection, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { sendToDiscord } = require('./itemTracker');
 const fs = require('fs');
+require('dotenv').config();
+const token = process.env.DISCORD_TOKEN;
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 client.commands = new Collection();
@@ -70,7 +72,7 @@ const commands = [
                 .setRequired(true))
 ].map(command => command.toJSON());
 
-const rest = new REST({ version: '10' }).setToken('MTE2Nzk0ODg2ODEzNTE3MDIwOA.Gqv4wE.bG9gNXtZY1QbW8UM0PpvPME6-awDYZ7LqxitnU');
+const rest = new REST({ version: '10' }).setToken(token);
 
 (async () => {
     try {
@@ -85,8 +87,7 @@ const rest = new REST({ version: '10' }).setToken('MTE2Nzk0ODg2ODEzNTE3MDIwOA.Gq
     }
 })();
 
-require('dotenv').config();
-const token = process.env.DISCORD_TOKEN;
+
 client.login(token);
 console.log("LOGGED");
 
