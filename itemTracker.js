@@ -1,6 +1,7 @@
 const axios = require('axios');
 const cheerio = require("cheerio");
 const { ButtonBuilder, ButtonStyle, ActionRowBuilder, EmbedBuilder } = require("discord.js");
+const moment = require("moment-timezone");
 
 let latestData = new Map();
 
@@ -199,8 +200,8 @@ async function reload(channel, options, activeSearches) {
 
 function toUnix(dateString) {
     try {
-        const date = new Date(dateString);
-        const unixTimeSeconds = Math.floor(date.getTime() / 1000);
+        const date = moment.tz(dateString, 'Europe/Paris');
+        const unixTimeSeconds = date.unix();
         return unixTimeSeconds;
     } catch (error) {
         console.error('Erreur lors de la conversion de la date en timestamp Unix :', error.message);
