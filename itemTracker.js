@@ -39,7 +39,7 @@ async function fetchNextData(options) {
             "url": fetchUrl,
             "httpResponseBody": true
         }, {
-            auth: { username: '2838b6dcab314bc99c35650f8d146e56' }
+            auth: { username: 'e9e84e2e189f4acbad4e141a6203aa16' }
         });
 
         if (response.status !== 200) {
