@@ -191,7 +191,7 @@ function formatPrice(price) {
 
 async function reload(channel, options, activeSearches) {
     try {
-        await delay(17000);
+        await delay(25000);
         await sendToDiscord(channel, options, activeSearches);
     } catch (error) {
         console.error('Erreur lors du rechargement :', error.message);
