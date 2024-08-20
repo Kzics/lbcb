@@ -69,11 +69,10 @@ async function checkDistance(origin, destination) {
         const response = await axios.get(url);
         const data = response.data;
 
-        const distanceValue = {
+        return {
             distance: data.rows[0].elements[0].distance.text,
             time: data.rows[0].elements[0].duration.text
         };
-        return distanceValue;
     } catch (error) {
         console.error('Erreur lors de la vérification de la distance :', error.message);
         return { distance: 'N/A', time: 'N/A' };
@@ -191,7 +190,7 @@ function formatPrice(price) {
 
 async function reload(channel, options, activeSearches) {
     try {
-        await delay(25000);
+        await delay(45000);
         await sendToDiscord(channel, options, activeSearches);
     } catch (error) {
         console.error('Erreur lors du rechargement :', error.message);

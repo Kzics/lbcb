@@ -16,6 +16,7 @@
     "dotenv": "^16.4.5",
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.5",
-    "moment-timezone": "^0.5.45"
+    "moment-timezone": "^0.5.45",
+    "postman-request": "^2.88.1-postman.39"
   }
 }
