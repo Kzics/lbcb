@@ -4,7 +4,7 @@ const fs = require('fs');
 require('dotenv').config();
 const token = process.env.DISCORD_TOKEN;
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 client.commands = new Collection();
 client.usersMap = new Map();
 
@@ -12,51 +12,54 @@ const trackedChannels = new Map();
 const activeSearches = new Map();
 const favorites = [];
 
-const COMMANDS_FILE = './trackedChannels.json';
+// Fonction pour sauvegarder les salons suivis
+function saveTrackedChannels() {
+    const data = Array.from(trackedChannels.entries());
+    fs.writeFileSync('trackedChannels.json', JSON.stringify(data, null, 2));
+}
 
-if (fs.existsSync(COMMANDS_FILE)) {
-    const data = fs.readFileSync(COMMANDS_FILE);
-    const json = JSON.parse(data);
-    for (const [channelId, info] of Object.entries(json)) {
-        trackedChannels.set(channelId, info);
+// Fonction pour charger les salons suivis
+function loadTrackedChannels() {
+    if (fs.existsSync('trackedChannels.json')) {
+        const data = JSON.parse(fs.readFileSync('trackedChannels.json', 'utf-8'));
+        data.forEach(([channelId, info]) => {
+            trackedChannels.set(channelId, info);
+            activeSearches.set(channelId, true);
+        });
     }
 }
+
+client.once('ready', () => {
+    console.log('Bot is ready!');
+    loadTrackedChannels();
+    trackedChannels.forEach(async (info, channelId) => {
+        const channel = client.channels.cache.get(channelId);
+        if (channel) {
+            await sendToDiscord(channel, info, activeSearches);
+        } else {
+            console.log(`Channel ${channelId} not found, removing from tracked channels.`);
+            // Supprimer les traques pour les salons supprimés
+            trackedChannels.delete(channelId);
+            activeSearches.delete(channelId);
+            saveTrackedChannels(); // Save the updated list
+        }
+    });
+});
 
 const commands = [
     new SlashCommandBuilder()
         .setName('search')
         .setDescription('Rechercher des annonces')
-        .addStringOption(option =>
-            option.setName('brand')
-                .setDescription('La marque du véhicule')
-                .setRequired(true))
-        .addStringOption(option =>
-            option.setName('sort')
-                .setDescription('Critère de tri (ex: time)')
-                .setRequired(true))
-        .addStringOption(option =>
-            option.setName('departements')
-                .setDescription('Choisir les Departements')
-                .setRequired(false))
-        .addStringOption(option =>
-            option.setName("modele")
-                .setDescription("Choisir un modèle")
-                .setRequired(false))
-        .addStringOption(option =>
-            option.setName("prix")
-                .setDescription("Choisir une tranche de prix(Ex: 100-1000)")
-                .setRequired(false))
-        .addStringOption(option =>
-            option.setName("kilometrage")
-                .setDescription("Choisir une tranche de kilometrage(Ex: 100-1000)")
-                .setRequired(false)),
+        .addStringOption(option => option.setName('brand').setDescription('La marque du véhicule').setRequired(true))
+        .addStringOption(option => option.setName('sort').setDescription('Critère de tri (ex: time)').setRequired(true))
+        .addStringOption(option => option.setName('departements').setDescription('Choisir les Departements').setRequired(false))
+        .addStringOption(option => option.setName('modele').setDescription('Choisir un modèle').setRequired(false))
+        .addStringOption(option => option.setName('prix').setDescription('Choisir une tranche de prix(Ex: 100-1000)').setRequired(false))
+        .addStringOption(option => option.setName('kilometrage').setDescription('Choisir une tranche de kilometrage(Ex: 100-1000)').setRequired(false)),
     new SlashCommandBuilder()
         .setName('unsearch')
         .setDescription('Arrêter de suivre un salon')
-        .addStringOption(option =>
-            option.setName('channel_id')
-                .setDescription('L\'ID du salon')
-                .setRequired(true)),
+        .addStringOption(option => option.setName('channel_id').setDescription('L\'ID du salon').setRequired(true)),
     new SlashCommandBuilder()
         .setName('listsearches')
         .setDescription('Lister toutes les recherches en cours'),
@@ -66,19 +69,17 @@ const commands = [
     new SlashCommandBuilder()
         .setName('unfav')
         .setDescription('Retirer une annonce des favoris')
-        .addStringOption(option =>
-            option.setName('id')
-                .setDescription('L\'ID du favori')
-                .setRequired(true))
+        .addStringOption(option => option.setName('id').setDescription('L\'ID du favori').setRequired(true))
 ].map(command => command.toJSON());
 
+// Initialisation de REST pour enregistrer les commandes avec Discord
 const rest = new REST({ version: '10' }).setToken(token);
 
 (async () => {
     try {
         console.log('Started refreshing application (/) commands.');
 
-        // Register the commands
+        // Enregistrement des commandes
         await rest.put(Routes.applicationCommands("1167948868135170208"), { body: commands });
 
         console.log('Successfully reloaded application (/) commands.');
@@ -87,25 +88,20 @@ const rest = new REST({ version: '10' }).setToken(token);
     }
 })();
 
-
+// Connexion du bot à Discord
 client.login(token);
 console.log("LOGGED");
 
-function saveTrackedChannels() {
-    const data = JSON.stringify(Object.fromEntries(trackedChannels), null, 2);
-    fs.writeFileSync(COMMANDS_FILE, data);
-}
-
+// Fonction pour générer un ID unique pour les favoris
 function generateFavoriteId() {
     return `fav-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+// Gestion des interactions par boutons
 async function handleButton(interaction) {
     const userId = interaction.user.id;
     const customId = interaction.customId;
-
     const listId = customId.split("_")[1];
-
     const embed = new EmbedBuilder();
 
     if (customId.startsWith("previous")) {
@@ -125,6 +121,7 @@ async function handleButton(interaction) {
     }
 }
 
+// Gestion des interactions de commandes slash
 client.on('interactionCreate', async interaction => {
     try {
         if (!interaction.isCommand()) {
@@ -142,7 +139,7 @@ client.on('interactionCreate', async interaction => {
             let dep = options.getString('departements');
             let models = options.getString("modele");
             let price = options.getString("prix");
-            let mileage = options.getString("kilometrage")
+            let mileage = options.getString("kilometrage");
 
             brand = brand.toUpperCase();
 
@@ -165,7 +162,7 @@ client.on('interactionCreate', async interaction => {
             if (dep) topic += `, Départements: ${dep.join(', ')}`;
             if (price) topic += `, Prix: ${price}`;
             if (mileage) topic += `, Kilométrage: ${mileage}`;
-            channel.setTopic(topic);
+            await channel.setTopic(topic);
             interaction.editReply({ content: `Salon créé : ${channel}`, ephemeral: true });
 
             const info = {
@@ -179,14 +176,24 @@ client.on('interactionCreate', async interaction => {
 
             trackedChannels.set(channel.id, info);
             activeSearches.set(channel.id, true);
+            saveTrackedChannels();
 
             await sendToDiscord(channel, info, activeSearches);
         } else if (commandName === 'unsearch') {
             const channelId = options.getString('channel_id');
+            console.log("Tracking channels:", trackedChannels);
+            console.log("Active searches:", activeSearches);
+
             if (trackedChannels.has(channelId)) {
                 trackedChannels.delete(channelId);
                 activeSearches.delete(channelId);
-                client.channels.cache.get(channelId).delete();
+
+                const channel = client.channels.cache.get(channelId);
+                if (channel) {
+                    await channel.delete(); // Assurez-vous que la suppression est effectuée correctement
+                }
+
+                saveTrackedChannels();  // Sauvegardez les modifications
                 interaction.editReply({ content: `Le suivi a été arrêté pour le salon : ${channelId}`, ephemeral: true });
             } else {
                 interaction.editReply({ content: `Aucun suivi trouvé pour le salon : ${channelId}`, ephemeral: true });
