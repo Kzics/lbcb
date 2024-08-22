@@ -3,17 +3,17 @@ const cheerio = require("cheerio");
 const { ButtonBuilder, ButtonStyle, ActionRowBuilder, EmbedBuilder } = require("discord.js");
 const moment = require("moment-timezone");
 
-let latestData = new Map();
+const latestData = new WeakMap();
 
 async function fetchNextData(options) {
     const url = "https://api.zyte.com/v1/extract";
-    let depString = options.dep?.map(dep => `d_${dep}`).join(",") || "";
+    const depString = options.dep?.map(dep => `d_${dep}`).join(",") || "";
 
     let fetchUrl = `https://www.leboncoin.fr/recherche?category=2`;
     if (depString) fetchUrl += `&locations=${depString}`;
     if (options.brand) fetchUrl += `&u_car_brand=${options.brand}`;
     if (options.models) fetchUrl += `&u_car_model=${options.brand}_${options.models}`;
-    if (options.sort) fetchUrl += `&sort=time`;
+    if (options.sort) fetchUrl += `&sort=${options.sort}`;
     if (options.price) fetchUrl += `&price=${options.price}`;
     if (options.mileage) fetchUrl += `&mileage=${options.mileage}`;
 
@@ -40,10 +40,11 @@ async function fetchNextData(options) {
     }
 }
 
+// Fonction pour vérifier la distance entre deux points
 async function checkDistance(origin, destination) {
-    try {
-        const url = `https://maps.googleapis.com/maps/api/distancematrix/json?units=metric&origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&key=AIzaSyDVpX2-v2O1VhGO1TJSHx8K8f2p1iuGd8A`;
+    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?units=metric&origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&key=AIzaSyDVpX2-v2O1VhGO1TJSHx8K8f2p1iuGd8A`;
 
+    try {
         const response = await axios.get(url);
         const data = response.data;
 
@@ -57,6 +58,7 @@ async function checkDistance(origin, destination) {
     }
 }
 
+// Fonction pour envoyer les données à Discord
 async function sendToDiscord(channel, options, activeSearches) {
     if (!activeSearches.has(channel.id)) return;
 
@@ -67,13 +69,12 @@ async function sendToDiscord(channel, options, activeSearches) {
     if (!adsData || adsData.length === 0) return;
 
     const latestAd = adsData[0];
-
-    if (latestData.get(channel.id) === latestAd.list_id) {
+    if (latestData.get(channel) === latestAd.list_id) {
         await reload(channel, options, activeSearches);
         return;
     }
 
-    latestData.set(channel.id, latestAd.list_id);
+    latestData.set(channel, latestAd.list_id);
 
     const {
         subject, body, list_id, index_date, price, location, images, attributes
@@ -96,51 +97,39 @@ async function sendToDiscord(channel, options, activeSearches) {
 
     const getAttributeValue = (key) => attributes.find(attr => attr.key === key)?.value_label || 'Non spécifié';
 
-    const comp = new ActionRowBuilder().setComponents(sendMessageButton, annonceButton, addFavoriteButton);
-    const embeds = [];
     const distanceValue = await checkDistance("Sevran", location.city);
 
-    for (let i = 0; i < Math.min(images.urls.length, 5); i++) {
-        const embedBuilder = new EmbedBuilder()
-            .setTitle(subject)
-            .setURL(`https://www.leboncoin.fr/voitures/${list_id}`)
-            .setTimestamp(new Date(index_date))
-            .setColor(3066993)
-            .setImage(images?.urls?.[i] || 'https://via.placeholder.com/150')
-            .addFields(
-                { name: "️Prix", value: `${formatPrice(price)}€`, inline: true },
-                { name: " Ville", value: `${location.city_label}`, inline: true },
-                { name: "️ Modèle", value: `${getAttributeValue("u_car_model")}`, inline: true },
-                { name: "️ Année modèle", value: `${getAttributeValue("regdate")}`, inline: true },
-                { name: "️ Date de première mise en circulation", value: `${getAttributeValue("issuance_date")}`, inline: true },
-                { name: "️ Kilométrage", value: `${getAttributeValue("mileage")}`, inline: true },
-                { name: "️ Carburant", value: `${getAttributeValue("fuel")}`, inline: true },
-                { name: "️ Date de fin de validité du contrôle technique", value: `${getAttributeValue("tech_control_date")}`, inline: true },
-                { name: "️ Boîte de vitesse", value: `${getAttributeValue("gearbox")}`, inline: true },
-                { name: "️ Sellerie", value: `${getAttributeValue("vehicle_upholstery")}`, inline: true },
-                { name: "️ État du véhicule", value: `${getAttributeValue("vehicle_damage")}`, inline: true },
-                { name: "️ Équipements", value: `${getAttributeValue("vehicle_interior_specs")}`, inline: true },
-                { name: "️ Caractéristiques", value: `${getAttributeValue("vehicle_specifications")}`, inline: true },
-                { name: "️ Type de véhicule", value: `${getAttributeValue("vehicle_type")}`, inline: true },
-                { name: "️ Couleur", value: `${getAttributeValue("vehicule_color")}`, inline: true },
-                { name: "️ Nombre de portes", value: `${getAttributeValue("doors")}`, inline: true },
-                { name: "️ Nombre de place(s)", value: `${getAttributeValue("seats")}`, inline: true },
-                { name: "️ Puissance", value: `${getAttributeValue("horse_power_din")}`, inline: true },
-                { name: "️ Mise en ligne", value: `<t:${toUnix(index_date)}:R>`, inline: true },
-                { name: "Info Suppl", value: `${distanceValue.distance} (${distanceValue.time})` }
-            );
-        embeds.push(embedBuilder);
-    }
+    const embeds = images.urls.slice(0, 5).map((url, index) => new EmbedBuilder()
+        .setTitle(subject)
+        .setURL(`https://www.leboncoin.fr/voitures/${list_id}`)
+        .setTimestamp(new Date(index_date))
+        .setColor(3066993)
+        .setImage(url || 'https://via.placeholder.com/150')
+        .addFields(
+            { name: "Prix", value: `${formatPrice(price)}€`, inline: true },
+            { name: "Ville", value: `${location.city_label}`, inline: true },
+            { name: "Modèle", value: `${getAttributeValue("u_car_model")}`, inline: true },
+            { name: "Année modèle", value: `${getAttributeValue("regdate")}`, inline: true },
+            { name: "Kilométrage", value: `${getAttributeValue("mileage")}`, inline: true },
+            { name: "Carburant", value: `${getAttributeValue("fuel")}`, inline: true },
+            { name: "Mise en ligne", value: `<t:${toUnix(index_date)}:R>`, inline: true },
+            { name: "Distance", value: `${distanceValue.distance} (${distanceValue.time})`, inline: true }
+        ));
 
-    await channel.send({ embeds: embeds, components: [comp] });
+    const comp = new ActionRowBuilder().setComponents(sendMessageButton, annonceButton, addFavoriteButton);
 
+    await channel.send({ embeds, components: [comp] });
+
+    // Nettoyage des options après envoi
     options = null;
 }
 
+// Fonction pour formater le prix
 function formatPrice(price) {
     return price?.toString()?.replace(/\B(?=(\d{3})+(?!\d))/g, " ") || price;
 }
 
+// Fonction pour recharger les données
 async function reload(channel, options, activeSearches) {
     try {
         await delay(45000);
@@ -150,10 +139,12 @@ async function reload(channel, options, activeSearches) {
     }
 }
 
+// Fonction pour convertir une date en format UNIX
 function toUnix(dateString) {
     return moment.tz(dateString, 'Europe/Paris').unix() || 0;
 }
 
+// Fonction pour introduire un délai
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }

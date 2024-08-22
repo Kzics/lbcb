@@ -2,22 +2,20 @@ const { Client, GatewayIntentBits, Collection, REST, Routes, SlashCommandBuilder
 const { sendToDiscord } = require('./itemTracker');
 const fs = require('fs');
 require('dotenv').config();
+const axios = require('axios');
+const cheerio = require("cheerio");
+const moment = require("moment-timezone");
+
 const token = process.env.DISCORD_TOKEN;
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
-client.usersMap = new Map();
 
-const trackedChannels = new Map();
-const activeSearches = new Set();
+let trackedChannels = new Map();
+let activeSearches = new Set();
 let favorites = [];
 
-function saveTrackedChannels() {
-    const data = JSON.stringify(Array.from(trackedChannels.entries()), null, 2);
-    fs.writeFileSync('trackedChannels.json', data);
-}
-
-function loadTrackedChannels() {
+const loadTrackedChannels = () => {
     if (fs.existsSync('trackedChannels.json')) {
         const data = JSON.parse(fs.readFileSync('trackedChannels.json', 'utf-8'));
         data.forEach(([channelId, info]) => {
@@ -25,7 +23,17 @@ function loadTrackedChannels() {
             activeSearches.add(channelId);
         });
     }
-}
+};
+
+const saveTrackedChannels = () => {
+    fs.writeFileSync('trackedChannels.json', JSON.stringify(Array.from(trackedChannels.entries()), null, 2));
+};
+
+const cleanUpChannel = (channelId) => {
+    trackedChannels.delete(channelId);
+    activeSearches.delete(channelId);
+    saveTrackedChannels();
+};
 
 client.once('ready', async () => {
     console.log('Bot is ready!');
@@ -37,9 +45,7 @@ client.once('ready', async () => {
             await sendToDiscord(channel, info, activeSearches);
         } else {
             console.log(`Channel ${channelId} not found, removing from tracked channels.`);
-            trackedChannels.delete(channelId);
-            activeSearches.delete(channelId);
-            saveTrackedChannels();
+            cleanUpChannel(channelId);
         }
     }
 });
@@ -70,13 +76,12 @@ const commands = [
         .addStringOption(option => option.setName('id').setDescription('L\'ID du favori').setRequired(true))
 ].map(command => command.toJSON());
 
-// Initialisation de REST pour enregistrer les commandes avec Discord
 const rest = new REST({ version: '10' }).setToken(token);
 
 (async () => {
     try {
         console.log('Started refreshing application (/) commands.');
-        await rest.put(Routes.applicationCommands("1167948868135170208"), { body: commands });
+        await rest.put(Routes.applicationCommands("1271571659047960618"), { body: commands });
         console.log('Successfully reloaded application (/) commands.');
     } catch (error) {
         console.error('Error reloading application (/) commands:', error);
@@ -86,21 +91,15 @@ const rest = new REST({ version: '10' }).setToken(token);
 client.login(token);
 console.log("LOGGED");
 
-// Fonction pour générer un ID unique pour les favoris
-function generateFavoriteId() {
-    return `fav-${Math.random().toString(36).substr(2, 9)}`;
-}
+const generateFavoriteId = () => `fav-${Math.random().toString(36).substr(2, 9)}`;
 
-// Gestion des interactions par boutons
-async function handleButton(interaction) {
+const handleButton = async (interaction) => {
     const customId = interaction.customId;
     const listId = customId.split("_")[1];
     const embed = new EmbedBuilder();
 
-    if (customId.startsWith("previous")) {
-        console.log("err");
-    } else if (customId.startsWith("next")) {
-        console.log("arr");
+    if (customId.startsWith("previous") || customId.startsWith("next")) {
+        console.log("Navigating pages...");
     } else {
         const favoriteId = generateFavoriteId();
         if (!favorites.some(fav => fav.listId === listId)) {
@@ -112,9 +111,8 @@ async function handleButton(interaction) {
             await interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-}
+};
 
-// Gestion des interactions de commandes slash
 client.on('interactionCreate', async interaction => {
     try {
         if (!interaction.isCommand()) {
@@ -201,7 +199,7 @@ client.on('interactionCreate', async interaction => {
             const ITEMS_PER_PAGE = 10;
             let currentPage = 0;
 
-            function generateEmbed(page) {
+            const generateEmbed = (page) => {
                 const embed = new EmbedBuilder()
                     .setTitle('📋 Liste des favoris')
                     .setColor(0x3498db)
@@ -212,83 +210,61 @@ client.on('interactionCreate', async interaction => {
                 const pageFavorites = favorites.slice(start, end);
 
                 for (const fav of pageFavorites) {
-                    const user = client.users.cache.get(fav.userId);
-                    const channel = client.channels.cache.get(fav.channelId);
+                    const { listId } = fav;
                     embed.addFields({
-                        name: `Favori ${fav.id}`,
-                        value: `[Lien de l'annonce](https://www.leboncoin.fr/ad/voitures/${fav.listId})\nAjouté par : ${user ? `<@${fav.userId}>` : 'Utilisateur inconnu'}\nSalon : <#${fav.channelId}>`,
-                        inline: false
+                        name: listId,
+                        value: `ID : ${listId}`
                     });
                 }
 
                 embed.setFooter({ text: `Page ${page + 1} sur ${Math.ceil(favorites.length / ITEMS_PER_PAGE)}` });
                 return embed;
-            }
+            };
 
-            const embed = generateEmbed(currentPage);
             const row = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId('previous')
-                        .setLabel('⬅️ Précédent')
+                        .setCustomId('previous_fav')
+                        .setLabel('◀️ Précédent')
                         .setStyle(ButtonStyle.Primary)
                         .setDisabled(currentPage === 0),
                     new ButtonBuilder()
-                        .setCustomId('next')
-                        .setLabel('➡️ Suivant')
+                        .setCustomId('next_fav')
+                        .setLabel('▶️ Suivant')
                         .setStyle(ButtonStyle.Primary)
-                        .setDisabled(favorites.length <= ITEMS_PER_PAGE)
+                        .setDisabled(currentPage === Math.ceil(favorites.length / ITEMS_PER_PAGE) - 1)
                 );
+
+            const embed = generateEmbed(currentPage);
 
             await interaction.editReply({ embeds: [embed], components: [row], ephemeral: true });
 
             const collector = interaction.channel.createMessageComponentCollector({ time: 60000 });
 
             collector.on('collect', async i => {
-                if (i.customId === 'previous' && currentPage > 0) {
+                if (i.customId === 'previous_fav') {
                     currentPage--;
-                } else if (i.customId === 'next' && (currentPage + 1) * ITEMS_PER_PAGE < favorites.length) {
+                } else if (i.customId === 'next_fav') {
                     currentPage++;
                 }
 
-                const newEmbed = generateEmbed(currentPage);
-                const newRow = new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder()
-                            .setCustomId('previous')
-                            .setLabel('⬅️ Précédent')
-                            .setStyle(ButtonStyle.Primary)
-                            .setDisabled(currentPage === 0),
-                        new ButtonBuilder()
-                            .setCustomId('next')
-                            .setLabel('➡️ Suivant')
-                            .setStyle(ButtonStyle.Primary)
-                            .setDisabled((currentPage + 1) * ITEMS_PER_PAGE >= favorites.length)
-                    );
+                const updatedEmbed = generateEmbed(currentPage);
 
-                await i.update({ embeds: [newEmbed], components: [newRow], ephemeral: true });
-            });
-
-            collector.on('end', () => {
-                interaction.editReply({ components: [] });
+                await i.update({ embeds: [updatedEmbed], components: [row], ephemeral: true });
             });
         } else if (commandName === 'unfav') {
             const favId = options.getString('id');
-            const index = favorites.findIndex(fav => fav.id === favId);
 
+            const index = favorites.findIndex(fav => fav.id === favId);
             if (index !== -1) {
-                favorites = favorites.filter(fav => fav.id !== favId);
-                interaction.editReply({ content: `Favori avec l'ID ${favId} a été retiré.`, ephemeral: true });
+                favorites.splice(index, 1);
+                interaction.editReply({ content: `Favori supprimé avec succès : ${favId}`, ephemeral: true });
             } else {
-                interaction.editReply({ content: `Aucun favori trouvé avec l'ID ${favId}.`, ephemeral: true });
+                interaction.editReply({ content: `Aucun favori trouvé avec l'ID : ${favId}`, ephemeral: true });
             }
         }
     } catch (error) {
-        console.error('Error handling interaction:', error);
-        if (interaction.replied || interaction.deferred) {
-            await interaction.editReply({ content: 'Une erreur est survenue lors du traitement de votre demande.', ephemeral: true });
-        } else {
-            await interaction.reply({ content: 'Une erreur est survenue lors du traitement de votre demande.', ephemeral: true });
-        }
+        console.error(error);
+        interaction.editReply({ content: 'Une erreur est survenue lors de l\'exécution de la commande.', ephemeral: true });
     }
 });
