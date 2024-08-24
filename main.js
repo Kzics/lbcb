@@ -2,9 +2,6 @@ const { Client, GatewayIntentBits, Collection, REST, Routes, SlashCommandBuilder
 const { sendToDiscord } = require('./itemTracker');
 const fs = require('fs');
 require('dotenv').config();
-const axios = require('axios');
-const cheerio = require("cheerio");
-const moment = require("moment-timezone");
 
 const token = process.env.DISCORD_TOKEN;
 
@@ -251,6 +248,16 @@ client.on('interactionCreate', async interaction => {
                 const updatedEmbed = generateEmbed(currentPage);
 
                 await i.update({ embeds: [updatedEmbed], components: [row], ephemeral: true });
+            });
+
+            // Clean up the collector after it's done
+            collector.on('end', () => {
+                console.log('Collector ended.');
+                // Disable buttons after the collector ends
+                interaction.editReply({ components: [new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId('previous_fav').setLabel('◀️ Précédent').setStyle(ButtonStyle.Primary).setDisabled(true),
+                        new ButtonBuilder().setCustomId('next_fav').setLabel('▶️ Suivant').setStyle(ButtonStyle.Primary).setDisabled(true)
+                    )] });
             });
         } else if (commandName === 'unfav') {
             const favId = options.getString('id');

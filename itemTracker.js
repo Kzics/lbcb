@@ -7,6 +7,7 @@ const latestData = new WeakMap();
 
 async function fetchNextData(options) {
     const url = "https://api.zyte.com/v1/extract";
+    console.log(options)
     const depString = options.dep?.map(dep => `d_${dep}`).join(",") || "";
 
     let fetchUrl = `https://www.leboncoin.fr/recherche?category=2`;
@@ -16,7 +17,6 @@ async function fetchNextData(options) {
     if (options.sort) fetchUrl += `&sort=${options.sort}`;
     if (options.price) fetchUrl += `&price=${options.price}`;
     if (options.mileage) fetchUrl += `&mileage=${options.mileage}`;
-
 
     try {
         const response = await axios.post(url, {
@@ -39,11 +39,11 @@ async function fetchNextData(options) {
         console.error('Erreur lors de la récupération des données :', error.message);
         return null;
     } finally {
-        fetchUrl = null;
-        options = null;
+        fetchUrl = null
     }
 }
 
+// Fonction pour vérifier la distance entre deux points
 async function checkDistance(origin, destination) {
     const url = `https://maps.googleapis.com/maps/api/distancematrix/json?units=metric&origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&key=AIzaSyDVpX2-v2O1VhGO1TJSHx8K8f2p1iuGd8A`;
 
@@ -58,21 +58,22 @@ async function checkDistance(origin, destination) {
     } catch (error) {
         console.error('Erreur lors de la vérification de la distance :', error.message);
         return { distance: 'N/A', time: 'N/A' };
-    } finally {
-        origin = null;
-        destination = null;
     }
 }
 
+// Fonction pour envoyer les données à Discord
 async function sendToDiscord(channel, options, activeSearches) {
+    console.log("new try")
     if (!activeSearches.has(channel.id)) return;
 
+    console.log("HERE 1")
     const brutData = await fetchNextData(options);
     if (!brutData) return;
+    console.log("HERE 2")
 
     const adsData = brutData.props.pageProps.searchData.ads;
     if (!adsData || adsData.length === 0) return;
-
+    console.log("HERE 3")
     const latestAd = adsData[0];
     if (latestData.get(channel) === latestAd.list_id) {
         await reload(channel, options, activeSearches);
@@ -81,7 +82,9 @@ async function sendToDiscord(channel, options, activeSearches) {
 
     latestData.set(channel, latestAd.list_id);
 
-    const { subject, body, list_id, index_date, price, location, images, attributes } = latestAd;
+    const {
+        subject, body, list_id, index_date, price, location, images, attributes
+    } = latestAd;
 
     const annonceButton = new ButtonBuilder()
         .setURL(`https://www.leboncoin.fr/ad/voitures/${list_id}`)
@@ -123,35 +126,41 @@ async function sendToDiscord(channel, options, activeSearches) {
 
     await channel.send({ embeds, components: [comp] });
 
-    embeds.length = 0; // Vider le tableau des embeds
-    options = null;
-    await reload(channel, options, activeSearches);
+    await reload(channel, options, activeSearches).then(()=>{
+        embeds.length = 0;
+        options = null;
+        channel = null;
+        comp = null;
+    });
 
-    // Clean up
-    channel = null;
-    comp = null;
 }
 
+// Fonction pour formater le prix
 function formatPrice(price) {
     return price?.toString()?.replace(/\B(?=(\d{3})+(?!\d))/g, " ") || price;
 }
 
+// Fonction pour recharger les données
 async function reload(channel, options, activeSearches) {
     try {
         await delay(45000);
         await sendToDiscord(channel, options, activeSearches);
     } catch (error) {
         console.error('Erreur lors du rechargement :', error.message);
+        channel = null;
+        options = null;
     } finally {
         channel = null;
         options = null;
     }
 }
 
+// Fonction pour convertir une date en format UNIX
 function toUnix(dateString) {
     return moment.tz(dateString, 'Europe/Paris').unix() || 0;
 }
 
+// Fonction pour introduire un délai
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
