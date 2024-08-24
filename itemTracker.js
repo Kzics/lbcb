@@ -17,6 +17,7 @@ async function fetchNextData(options) {
     if (options.price) fetchUrl += `&price=${options.price}`;
     if (options.mileage) fetchUrl += `&mileage=${options.mileage}`;
 
+
     try {
         const response = await axios.post(url, {
             "url": fetchUrl,
@@ -37,10 +38,12 @@ async function fetchNextData(options) {
     } catch (error) {
         console.error('Erreur lors de la récupération des données :', error.message);
         return null;
+    } finally {
+        fetchUrl = null;
+        options = null;
     }
 }
 
-// Fonction pour vérifier la distance entre deux points
 async function checkDistance(origin, destination) {
     const url = `https://maps.googleapis.com/maps/api/distancematrix/json?units=metric&origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&key=AIzaSyDVpX2-v2O1VhGO1TJSHx8K8f2p1iuGd8A`;
 
@@ -55,10 +58,12 @@ async function checkDistance(origin, destination) {
     } catch (error) {
         console.error('Erreur lors de la vérification de la distance :', error.message);
         return { distance: 'N/A', time: 'N/A' };
+    } finally {
+        origin = null;
+        destination = null;
     }
 }
 
-// Fonction pour envoyer les données à Discord
 async function sendToDiscord(channel, options, activeSearches) {
     if (!activeSearches.has(channel.id)) return;
 
@@ -76,9 +81,7 @@ async function sendToDiscord(channel, options, activeSearches) {
 
     latestData.set(channel, latestAd.list_id);
 
-    const {
-        subject, body, list_id, index_date, price, location, images, attributes
-    } = latestAd;
+    const { subject, body, list_id, index_date, price, location, images, attributes } = latestAd;
 
     const annonceButton = new ButtonBuilder()
         .setURL(`https://www.leboncoin.fr/ad/voitures/${list_id}`)
@@ -116,35 +119,39 @@ async function sendToDiscord(channel, options, activeSearches) {
             { name: "Distance", value: `${distanceValue.distance} (${distanceValue.time})`, inline: true }
         ));
 
-    const comp = new ActionRowBuilder().setComponents(sendMessageButton, annonceButton, addFavoriteButton);
+    let comp = new ActionRowBuilder().setComponents(sendMessageButton, annonceButton, addFavoriteButton);
 
     await channel.send({ embeds, components: [comp] });
 
-    // Nettoyage des options après envoi
+    embeds.length = 0; // Vider le tableau des embeds
     options = null;
+    await reload(channel, options, activeSearches);
+
+    // Clean up
+    channel = null;
+    comp = null;
 }
 
-// Fonction pour formater le prix
 function formatPrice(price) {
     return price?.toString()?.replace(/\B(?=(\d{3})+(?!\d))/g, " ") || price;
 }
 
-// Fonction pour recharger les données
 async function reload(channel, options, activeSearches) {
     try {
         await delay(45000);
         await sendToDiscord(channel, options, activeSearches);
     } catch (error) {
         console.error('Erreur lors du rechargement :', error.message);
+    } finally {
+        channel = null;
+        options = null;
     }
 }
 
-// Fonction pour convertir une date en format UNIX
 function toUnix(dateString) {
     return moment.tz(dateString, 'Europe/Paris').unix() || 0;
 }
 
-// Fonction pour introduire un délai
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
